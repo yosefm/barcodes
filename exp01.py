@@ -1,7 +1,13 @@
 # Barcodes experiment
+#
+# References:
+# [1] https://brokensecrets.com/2010/04/30/every-upc-barcode-has-30-bars/
+# [2] https://courses.cs.washington.edu/courses/cse370/01au/minirproject/TeamUPC/UPC.html
+# [3] https://en.wikipedia.org/wiki/Universal_Product_Code
 
 import cv2 as cv
 import numpy as np
+import math
 import matplotlib.pyplot as pl
 
 def image_edges(im):
@@ -54,12 +60,9 @@ def find_long_contours_cluster(long_boxes):
     heights = np.array([r[1][1] for r in filtered_rects])
     angles = np.array([r[2] for r in filtered_rects])
     counts, xedges, yedges = np.histogram2d(heights, angles)
-    
     print(counts)
-    print(yedges)
     
-    # 30 bars in a barcode, but some images get more...
-    # https://brokensecrets.com/2010/04/30/every-upc-barcode-has-30-bars/
+    # 30 bars in a barcode, but some images get more... [1]
     bar_cluster = np.nonzero((counts >= 30) & (counts < 32))
     
     min_height = xedges[bar_cluster[0][0]]
@@ -68,9 +71,6 @@ def find_long_contours_cluster(long_boxes):
     max_ang = yedges[bar_cluster[1][0] + 1]
 
     for rect in filtered_rects:
-        #print(rect)
-        #print(min_height)
-        
         height = rect[1][1]
         ang = rect[2]
         if not (min_height <= height <= max_height and min_ang <= ang <= max_ang):
@@ -80,6 +80,27 @@ def find_long_contours_cluster(long_boxes):
     
     return cluster_boxes
 
+def barcode_run_lengths(boxes):
+    """
+    Converts a barcode from a series of black boxes to run lengths of
+    the black and white parts, alternating. 
+    Assumes all boxes are in the same angle bin, so there are no 180-deg.
+    differences.
+    """
+    boxes.sort(key=lambda b: b[0][0]) # For now assume they're kind-of vertical.
+    
+    run_lengths = []
+    for spaceIx in range(len(boxes) - 1):
+        interbox_vec = np.r_[boxes[spaceIx + 1]] - np.r_[boxes[spaceIx]]
+        space_len = np.linalg.norm(interbox_vec) - (boxes[spaceIx + 1][1][0] + boxes[spaceIx][1][0])/2.
+        #print(np.linalg.norm(interbox_vec), boxes[spaceIx][1][0], boxes[spaceIx + 1][1][0], space_len)
+        
+        
+        run_lengths.extend([boxes[spaceIx][1][0], space_len])
+    
+    run_lengths.append(boxes[-1][1][0])
+    return run_lengths
+    
 def plot_boxes(box_list):
     for box in box_list:
         rect = cv.boxPoints(box)
@@ -98,7 +119,14 @@ if __name__ == "__main__":
         
         filtered_rects = find_long_contours(edges)
         cluster_boxes = find_long_contours_cluster(filtered_rects)
-        #print(cluster_boxes)
         plot_boxes(cluster_boxes)
+        
+        rls = barcode_run_lengths(cluster_boxes)
+        module_len = np.sum(rls) / 95
+        print (rls/module_len)
+        
+        rl_modules = np.int_(np.round(rls/module_len))
+        print(rl_modules, rl_modules.sum())
+        
         
     pl.show()

@@ -9,7 +9,9 @@ import cv2 as cv
 import numpy as np
 import math
 import matplotlib.pyplot as pl
+
 from sklearn.cluster import DBSCAN
+from sklearn.linear_model import LinearRegression
 
 def image_edges(im):
     """
@@ -107,12 +109,20 @@ def barcode_run_lengths(boxes):
     """
     boxes.sort(key=lambda b: b[0][0]) # For now assume they're kind-of vertical.
     
+    # Find th common line they're on. We can't naively use box centers
+    # because the limit bars can be longer than the digit bars.
+    lin_reg = LinearRegression()
+    centers = np.array([b[0] for b in boxes])
+    lin_reg.fit(centers[:,0,None], centers[:,1,None])
+    
+    line_ang = np.arctan(lin_reg.coef_[0][0])
+    line_direct = np.r_[np.cos(line_ang), np.sin(line_ang)]
+    
     run_lengths = []
     for spaceIx in range(len(boxes) - 1):
-        interbox_vec = np.r_[boxes[spaceIx + 1]] - np.r_[boxes[spaceIx]]
+        interbox_vec = centers[spaceIx + 1] - centers[spaceIx]
+        interbox_vec = line_direct*np.dot(interbox_vec, line_direct)
         space_len = np.linalg.norm(interbox_vec) - (boxes[spaceIx + 1][1][0] + boxes[spaceIx][1][0])/2.
-        #print(np.linalg.norm(interbox_vec), boxes[spaceIx][1][0], boxes[spaceIx + 1][1][0], space_len)
-        
         
         run_lengths.extend([boxes[spaceIx][1][0], space_len])
     

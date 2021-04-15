@@ -4,6 +4,8 @@
 # [1] https://brokensecrets.com/2010/04/30/every-upc-barcode-has-30-bars/
 # [2] https://courses.cs.washington.edu/courses/cse370/01au/minirproject/TeamUPC/UPC.html
 # [3] https://en.wikipedia.org/wiki/Universal_Product_Code
+# [4] https://en.wikipedia.org/wiki/International_Article_Number
+# [5] http://www.danacode.com/danacode.htm
 
 import cv2 as cv
 import numpy as np
@@ -12,6 +14,26 @@ import matplotlib.pyplot as pl
 
 from sklearn.cluster import DBSCAN
 from sklearn.linear_model import LinearRegression
+
+# See [2]
+upc_codes_key = {
+    (3, 2, 1, 1): 0,
+    (2, 2, 2, 1): 1,
+    (2, 1, 2, 2): 2, 
+    (1, 4, 1, 1): 3,
+    (1, 1, 3, 2): 4,
+    (1, 2, 3, 1): 5,
+    (1, 1, 1, 4): 6,
+    (1, 3, 1, 2): 7,
+    (1, 2, 1, 3): 8,
+    (3, 1, 1, 2): 9,
+}
+
+# How the 5 digits after the 1st are encoded in EAN-13 [4]:
+ean_parity_patterns = [
+    'LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 
+    'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'
+]
 
 def image_edges(im):
     """
@@ -128,6 +150,40 @@ def barcode_run_lengths(boxes):
     
     run_lengths.append(boxes[-1][1][0])
     return run_lengths
+
+def ean13_to_digits(bar_widths):
+    """
+    See [4].
+    
+    Receives a list of standardized bar widths (thinnest = 1, thickest = 4),
+    including delimiter bars (1-1-1 at both ends and 1-1-1-1-1 in middle).
+    Returns the digits corresponding to non-delimiter bars, or throws exception if 
+    the format is wrong.
+    
+    Arguments:
+    bar_widths - 59-length NumPy array of ints. Alternating black-white standardizd
+        bar width.
+    
+    Returns:
+    13-length array of digits.
+    """
+    assert(np.all(bar_widths[:3]) == 1) # left delim
+    assert(np.all(bar_widths[-3:]) == 1) # right delim
+    assert(np.all(bar_widths[27:32]) == 1) # middle delimiter.
+    
+    digit_codes = np.r_[bar_widths[3:27], bar_widths[32:-3]].reshape(-1,4)
+    digits = np.empty(13, dtype=np.int8)
+    
+    # First digit determined byparity pattern:
+    parities = ''.join(['G' if (code[1] + code[3]) % 2 == 0 else 'L' for code in digit_codes])
+    digits[0] = ean_parity_patterns.index(parities[:6])
+    
+    for code_ix, code in enumerate(digit_codes):
+        if parities[code_ix] == 'G':
+            code = code[::-1]
+        digits[code_ix + 1] = upc_codes_key[tuple(code)]
+        
+    return digits
     
 def plot_boxes(box_list):
     for box in box_list:
@@ -136,7 +192,8 @@ def plot_boxes(box_list):
         pl.plot(rect[:,0], rect[:,1], 'r')
 
 if __name__ == "__main__":
-    for im_name in ['2021-04-08_19-42-00.jpg', '2021-04-08_19-42-22.jpg', '2021-04-08_19-42-42.jpg']:
+    img_names = ['2021-04-08_19-42-00.jpg', '2021-04-08_19-42-22.jpg', '2021-04-08_19-42-42.jpg']
+    for im_name in img_names:
         pl.figure()
         
         im = cv.imread(im_name)
@@ -151,10 +208,9 @@ if __name__ == "__main__":
         
         rls = barcode_run_lengths(cluster_boxes)
         module_len = np.sum(rls) / 95
-        print (rls/module_len)
-        
         rl_modules = np.int_(np.round(rls/module_len))
-        print(rl_modules, rl_modules.sum())
         
+        digits = ean13_to_digits(rl_modules)        
+        pl.title(''.join([str(d) for d in digits]))
         
     pl.show()

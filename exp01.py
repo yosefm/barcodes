@@ -9,6 +9,7 @@ import cv2 as cv
 import numpy as np
 import math
 import matplotlib.pyplot as pl
+from sklearn.cluster import DBSCAN
 
 def image_edges(im):
     """
@@ -18,7 +19,7 @@ def image_edges(im):
     #kernel = np.ones((5,5),np.uint8) # structuring element for morphology.
 
     grey = cv.cvtColor(im, cv.COLOR_BGR2GRAY)
-    work_sample = cv.threshold(grey, 200, 255, cv.THRESH_BINARY)[1]
+    work_sample = cv.threshold(grey, 200, 255, cv.THRESH_BINARY_INV)[1]
     # The threshold value was selected by trial and error.
     # A future version should probably do more elaborate segmentation.
     
@@ -55,28 +56,32 @@ def find_long_contours(edges_image):
 def find_long_contours_cluster(long_boxes):
     """
     Finds among the long contours a cluster that's supposed to represent the barcode.
+    
+    Arguments:
+    long_boxes - a list of boxes (as represented by OpenCV box fitting).
+    
+    Returns:
+    a list of boxes that belong to a 30-boxes tight cluster in height/angle plane.
     """
     cluster_boxes = []
-    heights = np.array([r[1][1] for r in filtered_rects])
-    angles = np.array([r[2] for r in filtered_rects])
-    counts, xedges, yedges = np.histogram2d(heights, angles)
-    print(counts)
+    heights = np.array([r[1][1] for r in long_boxes])
+    angles = np.array([r[2] for r in long_boxes])
     
-    # 30 bars in a barcode, but some images get more... [1]
-    bar_cluster = np.nonzero((counts >= 30) & (counts < 32))
+    # Rescale to [0,1] for use with DBSCAN:
+    heights_scaled = (heights - heights.min())/(heights.max() - heights.min())
+    angles_scaled = angles/360
     
-    min_height = xedges[bar_cluster[0][0]]
-    max_height = xedges[bar_cluster[0][0] + 1]
-    min_ang = yedges[bar_cluster[1][0]]
-    max_ang = yedges[bar_cluster[1][0] + 1]
-
-    for rect in filtered_rects:
-        height = rect[1][1]
-        ang = rect[2]
-        if not (min_height <= height <= max_height and min_ang <= ang <= max_ang):
-            continue
-        
-        cluster_boxes.append(rect)
+    clustering = DBSCAN(eps=0.05, min_samples=3).fit(np.c_[heights_scaled, angles_scaled])
+    
+    # 30 bars in a barcode [1]
+    cluster_ids = np.unique(clustering.labels_)
+    counts = [(clustering.labels_ == l).sum() for l in np.unique(clustering.labels_)]
+    bars_label = np.nonzero(np.r_[counts] == 30)[0][0] - 1 
+    # Becauwse one label is '-1' for unclustered points
+    
+    for rid, rect in enumerate(long_boxes):
+        if clustering.labels_[rid] == bars_label:        
+            cluster_boxes.append(rect)
     
     return cluster_boxes
 
@@ -108,7 +113,7 @@ def plot_boxes(box_list):
         pl.plot(rect[:,0], rect[:,1], 'r')
 
 if __name__ == "__main__":
-    for im_name in ['2021-04-08_19-42-00.jpg', '2021-04-08_19-42-42.jpg'] :
+    for im_name in ['2021-04-08_19-42-00.jpg', '2021-04-08_19-42-42.jpg']:
         pl.figure()
         
         im = cv.imread(im_name)

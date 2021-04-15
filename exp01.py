@@ -46,7 +46,7 @@ def find_long_contours(edges_image):
             angle = rect[2] + 90 # angle. It's the same rect after the width-height change.
             rect = (rect[0], (width, height), angle)
             
-        if width <= 0 or height/width < 5:
+        if width <= 0 or height/width < 4.5:
             continue
         
         filtered_rects.append(rect)
@@ -71,19 +71,32 @@ def find_long_contours_cluster(long_boxes):
     heights_scaled = (heights - heights.min())/(heights.max() - heights.min())
     angles_scaled = angles/360
     
-    clustering = DBSCAN(eps=0.05, min_samples=3).fit(np.c_[heights_scaled, angles_scaled])
+    clustering = DBSCAN(eps=0.15, min_samples=3).fit(np.c_[heights_scaled, angles_scaled])
     
     # 30 bars in a barcode [1]
     cluster_ids = np.unique(clustering.labels_)
-    counts = [(clustering.labels_ == l).sum() for l in np.unique(clustering.labels_)]
-    bars_label = np.nonzero(np.r_[counts] == 30)[0][0] - 1 
-    # Becauwse one label is '-1' for unclustered points
+    #pl.figure()
+    #pl.scatter(heights, angles, c=clustering.labels_)
+    #pl.show()
+    counts = [(clustering.labels_ == l).sum() for l in cluster_ids]
+    bars_label = np.nonzero((np.r_[counts] == 30) | (np.r_[counts] == 46))[0][0]
     
+    # Becauwse one label can be '-1' for unclustered points:
+    uncluster_adj = 0
+    if cluster_ids[0] == -1:
+        bars_label -= 1
+        uncluster_adj = 1
+        
     for rid, rect in enumerate(long_boxes):
         if clustering.labels_[rid] == bars_label:        
             cluster_boxes.append(rect)
     
-    return cluster_boxes
+    # If the cluster is 46-long, it means a UPC-E barcode (6 digits, 16 bars) 
+    # is attached to the UPC-A barcode. Get rid of it for now:
+    if counts[bars_label + uncluster_adj] == 46:
+        cluster_boxes.sort(key=lambda b: b[0][0]) # For now assume they're kind-of vertical.
+    
+    return cluster_boxes[:30]
 
 def barcode_run_lengths(boxes):
     """
@@ -113,7 +126,7 @@ def plot_boxes(box_list):
         pl.plot(rect[:,0], rect[:,1], 'r')
 
 if __name__ == "__main__":
-    for im_name in ['2021-04-08_19-42-00.jpg', '2021-04-08_19-42-42.jpg']:
+    for im_name in ['2021-04-08_19-42-00.jpg', '2021-04-08_19-42-22.jpg', '2021-04-08_19-42-42.jpg']:
         pl.figure()
         
         im = cv.imread(im_name)

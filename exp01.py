@@ -7,6 +7,8 @@
 # [4] https://en.wikipedia.org/wiki/International_Article_Number
 # [5] http://www.danacode.com/danacode.htm
 
+from pathlib import Path
+
 import cv2 as cv
 import numpy as np
 import math
@@ -49,6 +51,7 @@ def image_edges(im):
     
     return work_sample
 
+
 def find_long_contours(edges_image):
     """
     Turn an image of edges (by derivative/Canny) to a list of rectangles
@@ -76,6 +79,7 @@ def find_long_contours(edges_image):
         filtered_rects.append(rect)
     
     return filtered_rects
+
 
 def find_long_contours_cluster(long_boxes):
     """
@@ -105,7 +109,7 @@ def find_long_contours_cluster(long_boxes):
     counts = [(clustering.labels_ == l).sum() for l in cluster_ids]
     bars_label = np.nonzero((np.r_[counts] == 30) | (np.r_[counts] == 46))[0][0]
     
-    # Becauwse one label can be '-1' for unclustered points:
+    # Because one label can be '-1' for unclustered points:
     uncluster_adj = 0
     if cluster_ids[0] == -1:
         bars_label -= 1
@@ -151,6 +155,7 @@ def barcode_run_lengths(boxes):
     run_lengths.append(boxes[-1][1][0])
     return run_lengths
 
+
 def ean13_to_digits(bar_widths):
     """
     See [4].
@@ -184,24 +189,26 @@ def ean13_to_digits(bar_widths):
         digits[code_ix + 1] = upc_codes_key[tuple(code)]
         
     return digits
-    
+
+
 def plot_boxes(box_list):
     for box in box_list:
         rect = cv.boxPoints(box)
         rect = np.vstack((rect, rect[0]))
         pl.plot(rect[:,0], rect[:,1], 'r')
 
+
 if __name__ == "__main__":
     img_names = ['2021-04-08_19-42-00.jpg', '2021-04-08_19-42-22.jpg', '2021-04-08_19-42-42.jpg']
     for im_name in img_names:
         pl.figure()
         
-        im = cv.imread(im_name)
-        # pl.imshow(im[...,::-1]) # OpenCV is BGR
-        
+        im = cv.imread(str(Path('data', im_name)))
+        #pl.imshow(im[...,::-1]) # OpenCV is BGR
+
         edges = image_edges(im)
         pl.imshow(edges, 'gray')
-        
+
         filtered_rects = find_long_contours(edges)
         cluster_boxes = find_long_contours_cluster(filtered_rects)
         plot_boxes(cluster_boxes)
